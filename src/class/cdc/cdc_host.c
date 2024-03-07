@@ -1328,7 +1328,10 @@ static void ftdi_process_config(tuh_xfer_t * xfer) {
         // other interfaces have same type as interface 0
         uint8_t const idx_itf0 = tuh_cdc_itf_get_index(xfer->daddr, 0);
         cdch_interface_t const * p_cdc_itf0 = get_itf(idx_itf0);
-        p_cdc->ftdi.chip_type = p_cdc_itf0->ftdi.chip_type;
+        TU_ASSERT_COMPLETE(p_cdc_itf0);
+        if (p_cdc_itf0) {
+         p_cdc->ftdi.chip_type = p_cdc_itf0->ftdi.chip_type;
+        }
       }
       TU_ATTR_FALLTHROUGH;
 
@@ -2317,7 +2320,7 @@ static bool pl2303_vendor_write(cdch_interface_t * p_cdc, uint16_t value, uint16
 
 static inline bool pl2303_supports_hx_status(cdch_interface_t * p_cdc, tuh_xfer_cb_t complete_cb, uintptr_t user_data)
 {
-  uint8_t buf;
+  uint8_t buf = 0;
 
   return pl2303_set_request(p_cdc, PL2303_VENDOR_READ_REQUEST, PL2303_VENDOR_READ_REQUEST_TYPE, PL2303_READ_TYPE_HX_STATUS, 0,
                             &buf, 1, complete_cb, user_data);
@@ -2509,7 +2512,7 @@ static void pl2303_process_config(tuh_xfer_t * xfer) {
   cdch_interface_t * p_cdc = get_itf(idx);
   // state CONFIG_PL2303_READ1 may have no success due to expected stall by pl2303_supports_hx_status()
   TU_ASSERT_COMPLETE(p_cdc && (xfer->result == XFER_RESULT_SUCCESS || xfer->user_data == CONFIG_PL2303_READ1));
-  uint8_t buf;
+  uint8_t buf = 0;
   int8_t type;
 
   switch (state) {
