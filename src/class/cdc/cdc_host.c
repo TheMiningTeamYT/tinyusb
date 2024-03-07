@@ -627,13 +627,14 @@ bool tuh_cdc_set_control_line_state_u(uint8_t idx, cdc_line_control_state_t line
 
 bool tuh_cdc_set_control_line_state(uint8_t idx, uint16_t line_state, tuh_xfer_cb_t complete_cb, uintptr_t user_data) {
   // uses uint16_t for line_state => DTR (bit 0), RTS (bit 1)
-  cdc_line_control_state_t const line_state_u = { .all = (uint8_t) line_state };
 
-  return tuh_cdc_set_control_line_state_u(idx, line_state_u, complete_cb, user_data);
+  return tuh_cdc_set_control_line_state_u(idx, (cdc_line_control_state_t) { .all = (uint8_t) line_state },
+                                          complete_cb, user_data);
 }
 
 bool tuh_cdc_set_dtr(uint8_t idx, bool dtr_state, tuh_xfer_cb_t complete_cb, uintptr_t user_data) {
   cdch_interface_t * p_cdc = get_itf(idx);
+  TU_VERIFY(p_cdc && p_cdc->serial_drid < SERIAL_DRIVER_COUNT);
   cdc_line_control_state_t const line_state = { .dtr = dtr_state, .rts = p_cdc->line_state.rts };
 
   return tuh_cdc_set_control_line_state_u(idx, line_state, complete_cb, user_data);
@@ -641,6 +642,7 @@ bool tuh_cdc_set_dtr(uint8_t idx, bool dtr_state, tuh_xfer_cb_t complete_cb, uin
 
 bool tuh_cdc_set_rts(uint8_t idx, bool rts_state, tuh_xfer_cb_t complete_cb, uintptr_t user_data) {
   cdch_interface_t * p_cdc = get_itf(idx);
+  TU_VERIFY(p_cdc && p_cdc->serial_drid < SERIAL_DRIVER_COUNT);
   cdc_line_control_state_t const line_state = { .rts = rts_state, .dtr = p_cdc->line_state.dtr };
 
   return tuh_cdc_set_control_line_state_u(idx, line_state, complete_cb, user_data);
@@ -1326,7 +1328,10 @@ static void ftdi_process_config(tuh_xfer_t * xfer) {
         // other interfaces have same type as interface 0
         uint8_t const idx_itf0 = tuh_cdc_itf_get_index(xfer->daddr, 0);
         cdch_interface_t const * p_cdc_itf0 = get_itf(idx_itf0);
-        p_cdc->ftdi.chip_type = p_cdc_itf0->ftdi.chip_type;
+        TU_ASSERT_COMPLETE(p_cdc_itf0);
+        if (p_cdc_itf0) {
+         p_cdc->ftdi.chip_type = p_cdc_itf0->ftdi.chip_type;
+        }
       }
       TU_ATTR_FALLTHROUGH;
 
@@ -2315,7 +2320,7 @@ static bool pl2303_vendor_write(cdch_interface_t * p_cdc, uint16_t value, uint16
 
 static inline bool pl2303_supports_hx_status(cdch_interface_t * p_cdc, tuh_xfer_cb_t complete_cb, uintptr_t user_data)
 {
-  uint8_t buf;
+  uint8_t buf = 0;
 
   return pl2303_set_request(p_cdc, PL2303_VENDOR_READ_REQUEST, PL2303_VENDOR_READ_REQUEST_TYPE, PL2303_READ_TYPE_HX_STATUS, 0,
                             &buf, 1, complete_cb, user_data);
@@ -2507,7 +2512,7 @@ static void pl2303_process_config(tuh_xfer_t * xfer) {
   cdch_interface_t * p_cdc = get_itf(idx);
   // state CONFIG_PL2303_READ1 may have no success due to expected stall by pl2303_supports_hx_status()
   TU_ASSERT_COMPLETE(p_cdc && (xfer->result == XFER_RESULT_SUCCESS || xfer->user_data == CONFIG_PL2303_READ1));
-  uint8_t buf;
+  uint8_t buf = 0;
   int8_t type;
 
   switch (state) {
