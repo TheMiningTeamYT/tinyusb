@@ -82,34 +82,34 @@ enum ftdi_sio_baudrate {
 // FTDI_SIO_SET_DATA
 #define FTDI_SIO_SET_DATA_REQUEST                 FTDI_SIO_SET_DATA
 #define FTDI_SIO_SET_DATA_REQUEST_TYPE            0x40
-#define FTDI_SIO_SET_DATA_PARITY_NONE             (0x0u << 8)
-#define FTDI_SIO_SET_DATA_PARITY_ODD              (0x1u << 8)
-#define FTDI_SIO_SET_DATA_PARITY_EVEN             (0x2u << 8)
-#define FTDI_SIO_SET_DATA_PARITY_MARK             (0x3u << 8)
-#define FTDI_SIO_SET_DATA_PARITY_SPACE            (0x4u << 8)
-#define FTDI_SIO_SET_DATA_STOP_BITS_1             (0x0u << 11) // same coding as ACM
-#define FTDI_SIO_SET_DATA_STOP_BITS_15            (0x1u << 11) // 1.5 not supported, for future use?
-#define FTDI_SIO_SET_DATA_STOP_BITS_2             (0x2u << 11)
-#define FTDI_SIO_SET_BREAK                        (0x1u << 14)
+#define FTDI_SIO_SET_DATA_PARITY_NONE             (0x0 << 8)
+#define FTDI_SIO_SET_DATA_PARITY_ODD              (0x1 << 8)
+#define FTDI_SIO_SET_DATA_PARITY_EVEN             (0x2 << 8)
+#define FTDI_SIO_SET_DATA_PARITY_MARK             (0x3 << 8)
+#define FTDI_SIO_SET_DATA_PARITY_SPACE            (0x4 << 8)
+#define FTDI_SIO_SET_DATA_STOP_BITS_1             (0x0 << 11) // same coding as ACM
+#define FTDI_SIO_SET_DATA_STOP_BITS_15            (0x1 << 11) // 1.5 not supported, for future use?
+#define FTDI_SIO_SET_DATA_STOP_BITS_2             (0x2 << 11)
+#define FTDI_SIO_SET_BREAK                        (0x1 << 14)
 
 // FTDI_SIO_MODEM_CTRL
 #define FTDI_SIO_SET_MODEM_CTRL_REQUEST_TYPE      0x40
 #define FTDI_SIO_SET_MODEM_CTRL_REQUEST           FTDI_SIO_MODEM_CTRL
 
-#define FTDI_SIO_SET_DTR_MASK                     0x1u
-#define FTDI_SIO_SET_DTR_HIGH                     ((FTDI_SIO_SET_DTR_MASK << 8) | 1u)
-#define FTDI_SIO_SET_DTR_LOW                      ((FTDI_SIO_SET_DTR_MASK << 8) | 0u)
-#define FTDI_SIO_SET_RTS_MASK                     0x2u
-#define FTDI_SIO_SET_RTS_HIGH                     ((FTDI_SIO_SET_RTS_MASK << 8) | 2u)
-#define FTDI_SIO_SET_RTS_LOW                      ((FTDI_SIO_SET_RTS_MASK << 8) | 0u)
+#define FTDI_SIO_SET_DTR_MASK                     0x1UL
+#define FTDI_SIO_SET_DTR_HIGH                     ((FTDI_SIO_SET_DTR_MASK << 8) | 1UL)
+#define FTDI_SIO_SET_DTR_LOW                      ((FTDI_SIO_SET_DTR_MASK << 8) | 0UL)
+#define FTDI_SIO_SET_RTS_MASK                     0x2UL
+#define FTDI_SIO_SET_RTS_HIGH                     ((FTDI_SIO_SET_RTS_MASK << 8) | 2UL)
+#define FTDI_SIO_SET_RTS_LOW                      ((FTDI_SIO_SET_RTS_MASK << 8) | 0UL)
 
 // FTDI_SIO_SET_FLOW_CTRL
 #define FTDI_SIO_SET_FLOW_CTRL_REQUEST_TYPE       0x40
 #define FTDI_SIO_SET_FLOW_CTRL_REQUEST            FTDI_SIO_SET_FLOW_CTRL
 #define FTDI_SIO_DISABLE_FLOW_CTRL 0x0
-#define FTDI_SIO_RTS_CTS_HS                       (0x1u << 8)
-#define FTDI_SIO_DTR_DSR_HS                       (0x2u << 8)
-#define FTDI_SIO_XON_XOFF_HS                      (0x4u << 8)
+#define FTDI_SIO_RTS_CTS_HS                       (0x1 << 8)
+#define FTDI_SIO_DTR_DSR_HS                       (0x2 << 8)
+#define FTDI_SIO_XON_XOFF_HS                      (0x4 << 8)
 
 // FTDI_SIO_GET_LATENCY_TIMER
 #define  FTDI_SIO_GET_LATENCY_TIMER_REQUEST       FTDI_SIO_GET_LATENCY_TIMER
@@ -150,19 +150,19 @@ enum ftdi_sio_baudrate {
 #define FTDI_FTX_CBUS_MUX_GPIO    0x8
 #define FTDI_FT232R_CBUS_MUX_GPIO 0xa
 
-#define FTDI_RS0_CTS  (1u << 4)
-#define FTDI_RS0_DSR  (1u << 5)
-#define FTDI_RS0_RI   (1u << 6)
-#define FTDI_RS0_RLSD (1u << 7)
+#define FTDI_RS0_CTS  (1 << 4)
+#define FTDI_RS0_DSR  (1 << 5)
+#define FTDI_RS0_RI   (1 << 6)
+#define FTDI_RS0_RLSD (1 << 7)
 
 #define FTDI_RS_DR    1
-#define FTDI_RS_OE    (1u << 1)
-#define FTDI_RS_PE    (1u << 2)
-#define FTDI_RS_FE    (1u << 3)
-#define FTDI_RS_BI    (1u << 4)
-#define FTDI_RS_THRE  (1u << 5)
-#define FTDI_RS_TEMT  (1u << 6)
-#define FTDI_RS_FIFO  (1u << 7)
+#define FTDI_RS_OE    (1 << 1)
+#define FTDI_RS_PE    (1 << 2)
+#define FTDI_RS_FE    (1 << 3)
+#define FTDI_RS_BI    (1 << 4)
+#define FTDI_RS_THRE  (1 << 5)
+#define FTDI_RS_TEMT  (1 << 6)
+#define FTDI_RS_FIFO  (1 << 7)
 
 // chip types and names
 enum ftdi_chip_type {

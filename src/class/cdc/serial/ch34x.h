@@ -64,8 +64,8 @@
 #define CH32X_REG16_LCR2_LCR          TU_U16(CH34X_REG_LCR2, CH34X_REG_LCR)
 
 // modem control bits
-#define CH34X_BIT_RTS                 (1u << 6)
-#define CH34X_BIT_DTR                 (1u << 5)
+#define CH34X_BIT_RTS                 (1 << 6)
+#define CH34X_BIT_DTR                 (1 << 5)
 
 // line control bits
 #define CH34X_LCR_ENABLE_RX           0x80

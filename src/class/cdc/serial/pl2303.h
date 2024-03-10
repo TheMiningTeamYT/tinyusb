@@ -52,8 +52,8 @@
 
 #define PL2303_BREAK_REQUEST_TYPE         0x21    // class request host to device interface
 #define PL2303_BREAK_REQUEST              0x23    // dec 35
-#define PL2303_BREAK_ON                   0xffffu
-#define PL2303_BREAK_OFF                  0x0000u
+#define PL2303_BREAK_ON                   0xffff
+#define PL2303_BREAK_OFF                  0x0000
 
 #define PL2303_GET_LINE_REQUEST_TYPE      0xa1    // class request device to host interface
 #define PL2303_GET_LINE_REQUEST           0x21    // dec 33
@@ -83,7 +83,7 @@
 #define PL2303_CLEAR_HALT_REQUEST_TYPE    0x02    // standard request host to device endpoint
 
 // registers via vendor read/write requests
-#define PL2303_READ_TYPE_HX_STATUS        0x8080u
+#define PL2303_READ_TYPE_HX_STATUS        0x8080
 
 #define PL2303_HXN_RESET_REG              0x07
 #define PL2303_HXN_RESET_UPSTREAM_PIPE    0x02
