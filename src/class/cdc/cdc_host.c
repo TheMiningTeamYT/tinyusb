@@ -1706,7 +1706,7 @@ static bool cp210x_set_baudrate_request(cdch_interface_t * p_cdc, tuh_xfer_cb_t 
 }
 
 static bool cp210x_set_line_ctl(cdch_interface_t * p_cdc, tuh_xfer_cb_t complete_cb, uintptr_t user_data) {
-  TU_VERIFY(p_cdc->requested_line_coding.data_bits >= 5 && p_cdc->requested_line_coding.data_bits <= 9, 0);
+  TU_VERIFY(p_cdc->requested_line_coding.data_bits >= 5 && p_cdc->requested_line_coding.data_bits <= 8, 0);
   uint16_t lcr = (uint16_t) (
     (p_cdc->requested_line_coding.data_bits & 0xfUL) << 8 | // data bit quantity is stored in bits 8-11
     (p_cdc->requested_line_coding.parity    & 0xfUL) << 4 | // parity is stored in bits 4-7, same coding
