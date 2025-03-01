@@ -40,9 +40,6 @@
 #include "host/hcd.h"
 #include "ohci.h"
 
-// TODO remove
-#include "chip.h"
-
 //--------------------------------------------------------------------+
 // MACRO CONSTANT TYPEDEF
 //--------------------------------------------------------------------+
@@ -189,9 +186,9 @@ bool hcd_init(uint8_t rhport)
     ohci_data.hcca.interrupt_table[i] = (uint32_t) _phys_addr(&ohci_data.period_head_ed);
   }
 
-  ohci_data.control[0].ed.skip  = 1;
-  ohci_data.bulk_head_ed.skip   = 1;
-  ohci_data.period_head_ed.skip = 1;
+  set_ed_bitfield(ohci_data.control[0].ed, skip, 1);
+  set_ed_bitfield(ohci_data.bulk_head_ed, skip, 1);
+  set_ed_bitfield(ohci_data.period_head_ed, skip, 1);
 
   //If OHCI hardware is in SMM mode, gain ownership (Ref OHCI spec 5.1.1.3.3)
   if (OHCI_REG->control_bit.interrupt_routing == 1)
@@ -217,6 +214,8 @@ bool hcd_init(uint8_t rhport)
 
   // reset controller
   OHCI_REG->command_status_bit.controller_reset = 1;
+  hcd_dcache_clean(&ohci_data, sizeof(ohci_data_t));
+
   while( OHCI_REG->command_status_bit.controller_reset ) {} // should not take longer than 10 us
 
   //------------- init ohci registers -------------//
@@ -288,7 +287,9 @@ void hcd_device_close(uint8_t rhport, uint8_t dev_addr)
   // addr0 serves as static head --> only set skip bit
   if ( dev_addr == 0 )
   {
-    ohci_data.control[0].ed.skip = 1;
+    hcd_dcache_invalidate(&ohci_data.control[0].ed, sizeof(ohci_ed_t));
+    set_ed_bitfield(ohci_data.control[0].ed, skip, 1);
+    hcd_dcache_clean(&ohci_data.control[0].ed, sizeof(ohci_ed_t));
   }else
   {
     // remove control
@@ -313,9 +314,9 @@ void hcd_device_close(uint8_t rhport, uint8_t dev_addr)
 //--------------------------------------------------------------------+
 static inline tusb_xfer_type_t ed_get_xfer_type(ohci_ed_t const * const p_ed)
 {
-  return (p_ed->ep_number == 0   ) ? TUSB_XFER_CONTROL     :
-         (p_ed->is_iso           ) ? TUSB_XFER_ISOCHRONOUS :
-         (p_ed->is_interrupt_xfer) ? TUSB_XFER_INTERRUPT   : TUSB_XFER_BULK;
+  return (get_ed_ptr_bitfield(p_ed, ep_number) == 0   ) ? TUSB_XFER_CONTROL     :
+         (get_ed_ptr_bitfield(p_ed, is_iso)           ) ? TUSB_XFER_ISOCHRONOUS :
+         (get_ed_ptr_bitfield(p_ed, is_interrupt_xfer)) ? TUSB_XFER_INTERRUPT   : TUSB_XFER_BULK;
 }
 
 static void ed_init(ohci_ed_t *p_ed, uint8_t dev_addr, uint16_t ep_size, uint8_t ep_addr, uint8_t xfer_type, uint8_t interval)
@@ -326,52 +327,69 @@ static void ed_init(ohci_ed_t *p_ed, uint8_t dev_addr, uint16_t ep_size, uint8_t
   if (dev_addr != 0)
   {
     tu_memclr(p_ed, sizeof(ohci_ed_t));
+  } else {
+    hcd_dcache_invalidate(p_ed, sizeof(ohci_ed_t));
   }
 
   hcd_devtree_info_t devtree_info;
   hcd_devtree_get_info(dev_addr, &devtree_info);
 
-  p_ed->dev_addr          = dev_addr;
-  p_ed->ep_number         = ep_addr & 0x0F;
-  p_ed->pid               = (xfer_type == TUSB_XFER_CONTROL) ? PID_FROM_TD : (tu_edpt_dir(ep_addr) ? PID_IN : PID_OUT);
-  p_ed->speed             = devtree_info.speed;
-  p_ed->is_iso            = (xfer_type == TUSB_XFER_ISOCHRONOUS) ? 1 : 0;
-  p_ed->max_packet_size   = ep_size;
+  ohci_ed_hwinfo_t newHwInfo = p_ed->hw_info;
+  from_le32(newHwInfo.raw);
 
-  p_ed->used              = 1;
-  p_ed->is_interrupt_xfer = (xfer_type == TUSB_XFER_INTERRUPT ? 1 : 0);
+  newHwInfo.dev_addr          = dev_addr;
+  newHwInfo.ep_number         = ep_addr & 0x0F;
+  newHwInfo.pid               = (xfer_type == TUSB_XFER_CONTROL) ? PID_FROM_TD : (tu_edpt_dir(ep_addr) ? PID_IN : PID_OUT);
+  newHwInfo.speed             = devtree_info.speed;
+  newHwInfo.is_iso            = (xfer_type == TUSB_XFER_ISOCHRONOUS) ? 1 : 0;
+  newHwInfo.max_packet_size   = ep_size;
+
+  newHwInfo.used              = 1;
+  newHwInfo.is_interrupt_xfer = (xfer_type == TUSB_XFER_INTERRUPT ? 1 : 0);
+
+  to_le32(newHwInfo.raw);
+  p_ed->hw_info = newHwInfo;
+
+  hcd_dcache_clean(p_ed, sizeof(ohci_ed_t));
 }
 
 static void gtd_init(ohci_gtd_t *p_td, uint8_t *data_ptr, uint16_t total_bytes) {
   tu_memclr(p_td, sizeof(ohci_gtd_t));
 
-  p_td->used = 1;
+  set_td_ptr_bitfield(p_td, used, 1);
   gtd_get_extra_data(p_td)->expected_bytes = total_bytes;
 
-  p_td->buffer_rounding = 1; // less than queued length is not a error
-  p_td->delay_interrupt = OHCI_INT_ON_COMPLETE_NO;
-  p_td->condition_code = OHCI_CCODE_NOT_ACCESSED;
+  ohci_gtd_hwinfo_t newHwInfo = p_td->hw_info;
+  from_le32(newHwInfo.raw);
+  newHwInfo.buffer_rounding = 1; // less than queued length is not a error
+  newHwInfo.delay_interrupt = OHCI_INT_ON_COMPLETE_NO;
+  newHwInfo.condition_code = OHCI_CCODE_NOT_ACCESSED;
+  to_le32(newHwInfo.raw);
+  p_td->hw_info = newHwInfo;
 
   uint8_t *cbp = (uint8_t *) _phys_addr(data_ptr);
 
-  p_td->current_buffer_pointer = cbp;
+  p_td->current_buffer_pointer = (uint8_t*) tu_htole32((uint32_t)cbp);
   if ( total_bytes ) {
-    p_td->buffer_end = _phys_addr(data_ptr + total_bytes - 1);
+    p_td->buffer_end = (uint8_t*) tu_htole32((uint32_t)_phys_addr(data_ptr + total_bytes - 1));
   } else {
-    p_td->buffer_end = cbp;
+    p_td->buffer_end = (uint8_t*) tu_htole32((uint32_t)cbp);
   }
+  hcd_dcache_clean_invalidate(p_td, sizeof(ohci_gtd_t));
 }
 
 static ohci_ed_t * ed_from_addr(uint8_t dev_addr, uint8_t ep_addr)
 {
+  hcd_dcache_invalidate(&ohci_data, sizeof(ohci_data_t));
+
   if ( tu_edpt_number(ep_addr) == 0 ) return &ohci_data.control[dev_addr].ed;
 
   ohci_ed_t* ed_pool = ohci_data.ed_pool;
 
   for(uint32_t i=0; i<ED_MAX; i++)
   {
-    if ( (ed_pool[i].dev_addr == dev_addr) &&
-          ep_addr == tu_edpt_addr(ed_pool[i].ep_number, ed_pool[i].pid == PID_IN) )
+    if ( (get_ed_bitfield(ed_pool[i], dev_addr) == dev_addr) &&
+          ep_addr == tu_edpt_addr(get_ed_bitfield(ed_pool[i], ep_number), get_ed_bitfield(ed_pool[i], pid) == PID_IN) )
     {
       return &ed_pool[i];
     }
@@ -386,7 +404,7 @@ static ohci_ed_t * ed_find_free(void)
 
   for(uint8_t i = 0; i < ED_MAX; i++)
   {
-    if ( !ed_pool[i].used ) return &ed_pool[i];
+    if ( !get_ed_bitfield(ed_pool[i], used) ) return &ed_pool[i];
   }
 
   return NULL;
@@ -394,33 +412,47 @@ static ohci_ed_t * ed_find_free(void)
 
 static void ed_list_insert(ohci_ed_t * p_pre, ohci_ed_t * p_ed)
 {
+  // Same endianness
   p_ed->next = p_pre->next;
-  p_pre->next = (uint32_t) _phys_addr(p_ed);
+  p_pre->next = tu_htole32((uint32_t) _phys_addr(p_ed));
 }
 
 static void ed_list_remove_by_addr(ohci_ed_t * p_head, uint8_t dev_addr)
 {
   ohci_ed_t* p_prev = p_head;
+  hcd_dcache_invalidate(p_prev, sizeof(ohci_ed_t));
 
   while( p_prev->next )
   {
-    ohci_ed_t* ed = (ohci_ed_t*) _virt_addr((void *)p_prev->next);
+    ohci_ed_t* ed = (ohci_ed_t*) _virt_addr((void *)tu_le32toh(p_prev->next));
+    hcd_dcache_invalidate(ed, sizeof(ohci_ed_t));
 
-    if (ed->dev_addr == dev_addr)
+    if (get_ed_ptr_bitfield(ed, dev_addr) == dev_addr)
     {
       // Prevent Host Controller from processing this ED while we remove it
-      ed->skip = 1;
+      ohci_ed_hwinfo_t newHwInfo = ed->hw_info;
+      from_le32(newHwInfo.raw);
+      newHwInfo.skip = 1;
+      ed->hw_info.raw = tu_htole32(newHwInfo.raw);
+      hcd_dcache_clean(ed, sizeof(ohci_ed_t));
 
       // unlink ed, will also move up p_prev
+      // same endianness so no need to convert.
       p_prev->next = ed->next;
 
       // point the removed ED's next pointer to list head to make sure HC can always safely move away from this ED
-      ed->next = (uint32_t) _phys_addr(p_head);
-      ed->used = 0;
-      ed->skip = 0;
+      ed->next = tu_htole32((uint32_t) _phys_addr(p_head));
+      newHwInfo.used = 0;
+      newHwInfo.skip = 0;
+      to_le32(newHwInfo.raw);
+      ed->hw_info = newHwInfo;
+
+      hcd_dcache_clean(ed, sizeof(ohci_ed_t));
+      hcd_dcache_clean(p_prev, sizeof(ohci_ed_t));
     }else
     {
-      p_prev = (ohci_ed_t*) _virt_addr((void *)p_prev->next);
+      p_prev = (ohci_ed_t*) _virt_addr((void *)(tu_le32toh(p_prev->next)));
+      hcd_dcache_invalidate(p_prev, sizeof(ohci_ed_t));
     }
   }
 }
@@ -429,7 +461,7 @@ static ohci_gtd_t * gtd_find_free(void)
 {
   for(uint8_t i=0; i < GTD_MAX; i++)
   {
-    if ( !ohci_data.gtd_pool[i].used ) return &ohci_data.gtd_pool[i];
+    if ( !get_td_bitfield(ohci_data.gtd_pool[i], used) ) return &ohci_data.gtd_pool[i];
   }
 
   return NULL;
@@ -438,13 +470,13 @@ static ohci_gtd_t * gtd_find_free(void)
 static void td_insert_to_ed(ohci_ed_t* p_ed, ohci_gtd_t * p_gtd)
 {
   // tail is always NULL
-  if ( tu_align16(p_ed->td_head.address) == 0 )
+  if ( tu_align16(tu_le32toh(p_ed->td_head.address)) == 0 )
   { // TD queue is empty --> head = TD
-    p_ed->td_head.address |= (uint32_t) _phys_addr(p_gtd);
+    p_ed->td_head.address |= tu_htole32((uint32_t) _phys_addr(p_gtd));
   }
   else
   { // TODO currently only support queue up to 2 TD each endpoint at a time
-    ((ohci_gtd_t*) tu_align16((uint32_t)_virt_addr((void *)p_ed->td_head.address)))->next = (uint32_t) _phys_addr(p_gtd);
+    ((ohci_gtd_t*) tu_align16((uint32_t)_virt_addr((void *)tu_le32toh(p_ed->td_head.address))))->next = tu_htole32((uint32_t) _phys_addr(p_gtd));
   }
 }
 
@@ -462,6 +494,8 @@ bool hcd_edpt_open(uint8_t rhport, uint8_t dev_addr, tusb_desc_endpoint_t const 
   //------------- Prepare Queue Head -------------//
   ohci_ed_t * p_ed;
 
+  hcd_dcache_invalidate(&ohci_data, sizeof(ohci_data_t));
+
   if ( ep_desc->bEndpointAddress == 0 )
   {
     p_ed = &ohci_data.control[dev_addr].ed;
@@ -477,11 +511,16 @@ bool hcd_edpt_open(uint8_t rhport, uint8_t dev_addr, tusb_desc_endpoint_t const 
   // control of dev0 is used as static async head
   if ( dev_addr == 0 )
   {
-    p_ed->skip = 0; // only need to clear skip bit
+    set_ed_ptr_bitfield(p_ed, skip, 0); // only need to clear skip bit
+    hcd_dcache_clean(p_ed, sizeof(ohci_ed_t));
     return true;
   }
 
   ed_list_insert( p_ed_head[ep_desc->bmAttributes.xfer], p_ed );
+
+  hcd_dcache_clean(&ohci_data, sizeof(ohci_data_t));
+  hcd_dcache_clean(p_ed, sizeof(ohci_ed_t));
+  hcd_dcache_clean(&p_ed_head, sizeof(ohci_ed_t));
 
   return true;
 }
@@ -490,17 +529,29 @@ bool hcd_setup_send(uint8_t rhport, uint8_t dev_addr, uint8_t const setup_packet
 {
   (void) rhport;
 
+  hcd_dcache_invalidate(&ohci_data, sizeof(ohci_data_t));
+
   ohci_ed_t* ed   = &ohci_data.control[dev_addr].ed;
   ohci_gtd_t *qtd = &ohci_data.control[dev_addr].gtd;
 
   gtd_init(qtd, (uint8_t*)(uintptr_t) setup_packet, 8);
-  qtd->index           = dev_addr;
-  qtd->pid             = PID_SETUP;
-  qtd->data_toggle     = GTD_DT_DATA0;
-  qtd->delay_interrupt = OHCI_INT_ON_COMPLETE_YES;
+  ohci_gtd_hwinfo_t newHwinfo = qtd->hw_info;
+  from_le32(newHwinfo.raw);
+
+  newHwinfo.index           = dev_addr;
+  newHwinfo.pid             = PID_SETUP;
+  newHwinfo.data_toggle     = GTD_DT_DATA0;
+  newHwinfo.delay_interrupt = OHCI_INT_ON_COMPLETE_YES;
+
+  to_le32(newHwinfo.raw);
+  qtd->hw_info = newHwinfo;
+
+  hcd_dcache_clean(setup_packet, 8);
 
   //------------- Attach TDs list to Control Endpoint -------------//
-  ed->td_head.address = (uint32_t) _phys_addr(qtd);
+  ed->td_head.address = tu_htole32((uint32_t) _phys_addr(qtd));
+
+  hcd_dcache_clean(ed, sizeof(ohci_ed_t));
 
   OHCI_REG->command_status_bit.control_list_filled = 1;
 
@@ -516,17 +567,32 @@ bool hcd_edpt_xfer(uint8_t rhport, uint8_t dev_addr, uint8_t ep_addr, uint8_t * 
 
   if ( epnum == 0 )
   {
+    hcd_dcache_invalidate(&ohci_data, sizeof(ohci_data_t));
+    
     ohci_ed_t*  ed  = &ohci_data.control[dev_addr].ed;
     ohci_gtd_t* gtd = &ohci_data.control[dev_addr].gtd;
 
     gtd_init(gtd, buffer, buflen);
+    ohci_gtd_hwinfo_t newHwinfo = gtd->hw_info;
+    from_le32(newHwinfo.raw);
 
-    gtd->index           = dev_addr;
-    gtd->pid             = dir ? PID_IN : PID_OUT;
-    gtd->data_toggle     = GTD_DT_DATA1; // Both Data and Ack stage start with DATA1
-    gtd->delay_interrupt = OHCI_INT_ON_COMPLETE_YES;
+    newHwinfo.index           = dev_addr;
+    newHwinfo.pid             = dir ? PID_IN : PID_OUT;
+    newHwinfo.data_toggle     = GTD_DT_DATA1; // Both Data and Ack stage start with DATA1
+    newHwinfo.delay_interrupt = OHCI_INT_ON_COMPLETE_YES;
 
-    ed->td_head.address = (uint32_t) _phys_addr(gtd);
+    to_le32(newHwinfo.raw);
+    gtd->hw_info = newHwinfo;
+    hcd_dcache_clean(gtd, sizeof(ohci_gtd_t));
+
+    ed->td_head.address = tu_htole32((uint32_t) _phys_addr(gtd));
+
+    // IN transfer: invalidate buffer, OUT transfer: clean buffer
+    if (dir) {
+      hcd_dcache_invalidate(buffer, buflen);
+    }else {
+      hcd_dcache_clean(buffer, buflen);
+    }
 
     OHCI_REG->command_status_bit.control_list_filled = 1;
   }else
@@ -537,8 +603,16 @@ bool hcd_edpt_xfer(uint8_t rhport, uint8_t dev_addr, uint8_t ep_addr, uint8_t * 
     TU_ASSERT(gtd);
 
     gtd_init(gtd, buffer, buflen);
-    gtd->index = ed-ohci_data.ed_pool;
-    gtd->delay_interrupt = OHCI_INT_ON_COMPLETE_YES;
+    set_td_ptr_bitfield(gtd, index, ed-ohci_data.ed_pool);
+    set_td_ptr_bitfield(gtd, delay_interrupt, OHCI_INT_ON_COMPLETE_YES);
+    hcd_dcache_clean(gtd, sizeof(ohci_gtd_t));
+
+    // IN transfer: invalidate buffer, OUT transfer: clean buffer
+    if (dir) {
+      hcd_dcache_invalidate(buffer, buflen);
+    }else {
+      hcd_dcache_clean(buffer, buflen);
+    }
 
     td_insert_to_ed(ed, gtd);
 
@@ -561,12 +635,16 @@ bool hcd_edpt_clear_stall(uint8_t rhport, uint8_t dev_addr, uint8_t ep_addr) {
   (void) rhport;
   ohci_ed_t * const p_ed = ed_from_addr(dev_addr, ep_addr);
 
-  p_ed->is_stalled = 0;
-  p_ed->td_tail    &= 0x0Ful; // set tail pointer back to NULL
+  hcd_dcache_invalidate(p_ed, sizeof(ohci_data_t));
+
+  set_ed_ptr_bitfield(p_ed, is_stalled, 0);
+  p_ed->td_tail    &= tu_htole32(0x0Ful); // set tail pointer back to NULL
 
   p_ed->td_head.toggle = 0; // reset data toggle
   p_ed->td_head.halted = 0;
 
+  hcd_dcache_clean_invalidate(p_ed, sizeof(ohci_ed_t));
+  
   if ( TUSB_XFER_BULK == ed_get_xfer_type(p_ed) ) OHCI_REG->command_status_bit.bulk_list_filled = 1;
 
   return true;
@@ -583,11 +661,11 @@ static ohci_td_item_t* list_reverse(ohci_td_item_t* td_head)
   while(td_head != NULL)
   {
     td_head = _virt_addr(td_head);
-    uint32_t next = td_head->next;
+    uint32_t next = tu_le32toh(td_head->next);
 
     // make current's item become reverse's first item
-    td_head->next = (uint32_t) td_reverse_head;
-    td_reverse_head  = _phys_addr(td_head);
+    td_head->next = tu_htole32((uint32_t) td_reverse_head);
+    td_reverse_head  = _phys_addr((void*)tu_le32toh((uint32_t)td_head));
 
     td_head = (ohci_td_item_t*) next; // advance to next item
   }
@@ -604,10 +682,10 @@ static inline ohci_ed_t* gtd_get_ed(ohci_gtd_t const * const p_qtd)
 {
   if ( gtd_is_control(p_qtd) )
   {
-    return &ohci_data.control[p_qtd->index].ed;
+    return &ohci_data.control[get_td_ptr_bitfield(p_qtd, index)].ed;
   }else
   {
-    return &ohci_data.ed_pool[p_qtd->index];
+    return &ohci_data.ed_pool[get_td_ptr_bitfield(p_qtd, index)];
   }
 }
 
@@ -635,23 +713,30 @@ static void done_queue_isr(uint8_t hostid)
 {
   (void) hostid;
 
+  hcd_dcache_invalidate(&ohci_data, sizeof(ohci_data_t));
+
   // done head is written in reversed order of completion --> need to reverse the done queue first
   ohci_td_item_t* td_head = list_reverse ( (ohci_td_item_t*) tu_align16(ohci_data.hcca.done_head) );
+  hcd_dcache_invalidate(td_head, sizeof(ohci_td_item_t));
   ohci_data.hcca.done_head = 0;
+  hcd_dcache_clean_invalidate(&ohci_data, sizeof(ohci_data_t));
 
   while( td_head != NULL )
   {
     // TODO check if td_head is iso td
     //------------- Non ISO transfer -------------//
     ohci_gtd_t * const qtd = (ohci_gtd_t *) td_head;
-    xfer_result_t const event = (qtd->condition_code == OHCI_CCODE_NO_ERROR) ? XFER_RESULT_SUCCESS :
-                                (qtd->condition_code == OHCI_CCODE_STALL) ? XFER_RESULT_STALLED : XFER_RESULT_FAILED;
+    hcd_dcache_invalidate(qtd, sizeof(ohci_gtd_t));
+    xfer_result_t const event = (get_td_ptr_bitfield(qtd, condition_code) == OHCI_CCODE_NO_ERROR) ? XFER_RESULT_SUCCESS :
+                                (get_td_ptr_bitfield(qtd, condition_code) == OHCI_CCODE_STALL) ? XFER_RESULT_STALLED : XFER_RESULT_FAILED;
 
-    qtd->used = 0; // free TD
-    if ( (qtd->delay_interrupt == OHCI_INT_ON_COMPLETE_YES) || (event != XFER_RESULT_SUCCESS) )
+    set_td_ptr_bitfield(qtd, used, 0); // free TD
+    hcd_dcache_clean(qtd, sizeof(ohci_gtd_t));
+    if ( (get_td_ptr_bitfield(qtd, delay_interrupt) == OHCI_INT_ON_COMPLETE_YES) || (event != XFER_RESULT_SUCCESS) )
     {
       ohci_ed_t * const ed  = gtd_get_ed(qtd);
-      uint32_t const xferred_bytes = gtd_get_extra_data(qtd)->expected_bytes - gtd_xfer_byte_left((uint32_t) qtd->buffer_end, (uint32_t) qtd->current_buffer_pointer);
+      hcd_dcache_invalidate(ed, sizeof(ohci_ed_t));
+      uint32_t const xferred_bytes = gtd_get_extra_data(qtd)->expected_bytes - gtd_xfer_byte_left(tu_le32toh((uint32_t) qtd->buffer_end), tu_le32toh((uint32_t) qtd->current_buffer_pointer));
 
       // NOTE Assuming the current list is BULK and there is no other EDs in the list has queued TDs.
       // When there is a error resulting this ED is halted, and this EP still has other queued TD
@@ -662,17 +747,19 @@ static void done_queue_isr(uint8_t hostid)
       // the TailP must be set back to NULL for processing remaining TDs
       if (event != XFER_RESULT_SUCCESS)
       {
-        ed->td_tail &= 0x0Ful;
-        ed->td_tail |= tu_align16(ed->td_head.address); // mark halted EP as empty queue
-        if ( event == XFER_RESULT_STALLED ) ed->is_stalled = 1;
+        ed->td_tail &= tu_htole32(0x0Ful);
+        ed->td_tail |= tu_htole32(tu_align16(tu_le32toh(ed->td_head.address))); // mark halted EP as empty queue
+        if ( event == XFER_RESULT_STALLED ) set_ed_ptr_bitfield(ed, is_stalled, 1);
+        hcd_dcache_clean_invalidate(ed, sizeof(ohci_ed_t));
       }
 
-      uint8_t dir = (ed->ep_number == 0) ? (qtd->pid == PID_IN) : (ed->pid == PID_IN);
+      uint8_t dir = (get_ed_ptr_bitfield(ed, ep_number) == 0) ? (get_td_ptr_bitfield(qtd, pid) == PID_IN) : (get_ed_ptr_bitfield(ed, pid) == PID_IN);
 
-      hcd_event_xfer_complete(ed->dev_addr, tu_edpt_addr(ed->ep_number, dir), xferred_bytes, event, true);
+      hcd_event_xfer_complete(get_ed_ptr_bitfield(ed, dev_addr), tu_edpt_addr(get_ed_ptr_bitfield(ed, ep_number), dir), xferred_bytes, event, true);
     }
 
-    td_head = (ohci_td_item_t*) _virt_addr((void *)td_head->next);
+    td_head = (ohci_td_item_t*) _virt_addr((void *)tu_le32toh(td_head->next));
+    hcd_dcache_invalidate(td_head, sizeof(ohci_td_item_t));
   }
 }
 

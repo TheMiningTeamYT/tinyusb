@@ -69,19 +69,26 @@ typedef struct TU_ATTR_ALIGNED(16) {
   uint32_t reserved2;
 }ohci_td_item_t;
 
+typedef union {
+  struct {
+    uint32_t used                    : 1;
+    uint32_t index                   : 8; // endpoint index the gtd belongs to, or device address in case of control xfer
+    uint32_t                         : 9; // can be used
+    uint32_t buffer_rounding         : 1;
+    uint32_t pid                     : 2;
+    uint32_t delay_interrupt         : 3;
+    volatile uint32_t data_toggle    : 2;
+    volatile uint32_t error_count    : 2;
+    volatile uint32_t condition_code : 4;
+  };
+  uint32_t raw;
+} ohci_gtd_hwinfo_t;
+
 typedef struct TU_ATTR_ALIGNED(16)
 {
 	// Word 0
-	uint32_t used                    : 1;
-  uint32_t index                   : 8; // endpoint index the gtd belongs to, or device address in case of control xfer
-  uint32_t                         : 9; // can be used
-  uint32_t buffer_rounding         : 1;
-  uint32_t pid                     : 2;
-  uint32_t delay_interrupt         : 3;
-  volatile uint32_t data_toggle    : 2;
-  volatile uint32_t error_count    : 2;
-  volatile uint32_t condition_code : 4;
-
+  ohci_gtd_hwinfo_t hw_info;
+  
 	// Word 1
 	uint8_t* volatile current_buffer_pointer;
 
@@ -92,23 +99,62 @@ typedef struct TU_ATTR_ALIGNED(16)
 	uint8_t* buffer_end;
 } ohci_gtd_t;
 
+#define from_le32(var) (var = tu_le32toh(var))
+#define to_le32(var) (var = tu_htole32(var))
+
+// Only works on GCC.
+#define get_td_bitfield(var, field) ({ \
+  ohci_gtd_hwinfo_t newHwInfo = var.hw_info; \
+  from_le32(newHwInfo.raw); \
+  newHwInfo.field; \
+})
+
+#define get_td_ptr_bitfield(var, field) ({ \
+  ohci_gtd_hwinfo_t newHwInfo = var->hw_info; \
+  from_le32(newHwInfo.raw); \
+  newHwInfo.field; \
+})
+
+#define set_td_bitfield(var, field, value) { \
+  ohci_gtd_hwinfo_t newHwInfo = var.hw_info; \
+  from_le32(newHwInfo.raw); \
+  newHwInfo.field = value; \
+  to_le32(newHwInfo.raw); \
+  var.hw_info = newHwInfo; \
+}
+
+#define set_td_ptr_bitfield(var, field, value) { \
+  ohci_gtd_hwinfo_t newHwInfo = var->hw_info; \
+  from_le32(newHwInfo.raw); \
+  newHwInfo.field = value; \
+  to_le32(newHwInfo.raw); \
+  var->hw_info = newHwInfo; \
+}
+
 TU_VERIFY_STATIC( sizeof(ohci_gtd_t) == 16, "size is not correct" );
+
+typedef union {
+  struct {
+    uint32_t dev_addr          : 7;
+    uint32_t ep_number         : 4;
+    uint32_t pid               : 2;
+    uint32_t speed             : 1;
+    uint32_t skip              : 1;
+    uint32_t is_iso            : 1;
+    uint32_t max_packet_size   : 11;
+          // HCD: make use of 5 reserved bits
+    uint32_t used              : 1;
+    uint32_t is_interrupt_xfer : 1;
+    uint32_t is_stalled        : 1;
+    uint32_t                   : 2;
+  };
+  uint32_t raw;
+} ohci_ed_hwinfo_t;
 
 typedef struct TU_ATTR_ALIGNED(16)
 {
   // Word 0
-	uint32_t dev_addr          : 7;
-	uint32_t ep_number         : 4;
-	uint32_t pid               : 2;
-	uint32_t speed             : 1;
-	uint32_t skip              : 1;
-	uint32_t is_iso            : 1;
-	uint32_t max_packet_size   : 11;
-	      // HCD: make use of 5 reserved bits
-	uint32_t used              : 1;
-	uint32_t is_interrupt_xfer : 1;
-	uint32_t is_stalled        : 1;
-	uint32_t                   : 2;
+  ohci_ed_hwinfo_t hw_info;
 
 	// Word 1
 	uint32_t td_tail;
@@ -117,15 +163,51 @@ typedef struct TU_ATTR_ALIGNED(16)
 	volatile union {
 		uint32_t address;
 		struct {
+      #if (TU_BYTE_ORDER == TU_LITTLE_ENDIAN)
 			uint32_t halted : 1;
 			uint32_t toggle : 1;
 			uint32_t : 30;
+      #else
+      uint32_t : 6;
+      uint32_t halted : 1;
+			uint32_t toggle : 1;
+      uint32_t : 24;
+      #endif
 		};
 	}td_head;
 
 	// Word 3: next ED
 	uint32_t next;
 } ohci_ed_t;
+
+// Only works on GCC.
+#define get_ed_bitfield(var, field) ({ \
+  ohci_ed_hwinfo_t newHwInfo = var.hw_info; \
+  from_le32(newHwInfo.raw); \
+  newHwInfo.field; \
+})
+
+#define get_ed_ptr_bitfield(var, field) ({ \
+  ohci_ed_hwinfo_t newHwInfo = var->hw_info; \
+  from_le32(newHwInfo.raw); \
+  newHwInfo.field; \
+})
+
+#define set_ed_bitfield(var, field, value) { \
+  ohci_ed_hwinfo_t newHwInfo = var.hw_info; \
+  from_le32(newHwInfo.raw); \
+  newHwInfo.field = value; \
+  to_le32(newHwInfo.raw); \
+  var.hw_info = newHwInfo; \
+}
+
+#define set_ed_ptr_bitfield(var, field, value) { \
+  ohci_ed_hwinfo_t newHwInfo = var->hw_info; \
+  from_le32(newHwInfo.raw); \
+  newHwInfo.field = value; \
+  to_le32(newHwInfo.raw); \
+  var->hw_info = newHwInfo; \
+}
 
 TU_VERIFY_STATIC( sizeof(ohci_ed_t) == 16, "size is not correct" );
 

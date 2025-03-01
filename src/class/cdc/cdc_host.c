@@ -129,7 +129,7 @@ typedef struct {
   } stream;
 } cdch_interface_t;
 
-CFG_TUH_MEM_SECTION
+__attribute__ ((section(".usb_ram2")))
 static cdch_interface_t cdch_data[CFG_TUH_CDC];
 
 #if CFG_TUH_CDC_FTDI || CFG_TUH_CDC_PL2303
